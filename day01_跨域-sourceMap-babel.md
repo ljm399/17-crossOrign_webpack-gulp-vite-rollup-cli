@@ -43,7 +43,7 @@
 
 
 
-## 1.2.放到同一个服务器没有跨域
+## 1.2.放到同一个服务器没有跨域（一般webpack，vite那些框架有proxy帮你实现，但只适用于开发，nuxt可以适用于生成，具体可以看webpack或nuxt）
 
 核心思路：让“页面”和“接口”从浏览器视角看起来是同一个源（协议/域名/端口一致），就不会触发跨域。
 
@@ -254,6 +254,52 @@ Postman 验证（只能验证接口能不能通，无法体现跨域拦截）：
   - 直接返回 204（无内容，但成功）
   - 并且上面已经设置好 CORS 头
 - 所以预检能顺利通过，跨域请求才能继续。 --- **注意是浏览器，你服务器满足他就行了**
+
+##### 服务器中解决跨域使用代码
+
+```js
+app.use(async (ctx, next) => {
+  // 1) 获取浏览器发来的 Origin（跨域请求来源）
+  const requestOrigin = ctx.get("Origin");
+
+  // 2) 设置允许跨域的来源
+  // - 如果有 Origin：回显该 Origin（常用做法，便于后续支持 cookie）
+  // - 如果没有 Origin：说明可能是同源/非浏览器请求，兜底允许所有
+  if (requestOrigin) {
+    ctx.set("Access-Control-Allow-Origin", requestOrigin);
+    // 3) 告诉缓存：该响应会因 Origin 不同而不同，避免 CDN/代理缓存串数据
+    ctx.set("Vary", "Origin");
+  } else {
+    ctx.set("Access-Control-Allow-Origin", "*");
+  }
+
+  // 4) 允许跨域请求使用哪些 HTTP 方法
+  ctx.set("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
+
+  // 5) 允许跨域请求携带哪些请求头
+  // - 优先使用浏览器预检请求带的 Access-Control-Request-Headers
+  // - 否则兜底允许常用的 Content-Type / Authorization
+  ctx.set(
+    "Access-Control-Allow-Headers",
+    ctx.get("Access-Control-Request-Headers") || "Content-Type, Authorization"
+  );
+
+  // 6) 处理预检请求（preflight）
+  // - 浏览器在跨域且“非简单请求”时会先发 OPTIONS
+  // - 这里直接返回 204，表示允许并结束请求
+  if (ctx.method === "OPTIONS") {
+    ctx.status = 204;
+    return;
+  }
+
+  // 7) 继续执行后面的中间件/路由
+  await next();
+});
+```
+
+
+
+
 
 
 
